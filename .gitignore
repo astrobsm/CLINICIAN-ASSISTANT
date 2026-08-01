@@ -15,3 +15,11 @@ public/ocr/
 # Scratch files from diagnostic sessions
 .tmp-*
 .tmpprofile*
+
+# Secrets — never commit. The OpenAI key belongs in Vercel's environment
+# variables, or in a local .env that stays on this machine.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
