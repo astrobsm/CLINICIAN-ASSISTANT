@@ -22,7 +22,8 @@
     "preview:http": "node scripts/preview-http.mjs",
     "verify:lab": "node scripts/verify-lab-scan.mjs",
     "verify:redaction": "node scripts/verify-redaction.mjs",
-    "verify:all": "npm run verify && npm run verify:ecg"
+    "verify:all": "npm run verify && npm run verify:ecg",
+    "verify:assisted": "node scripts/verify-assisted.mjs"
   },
   "dependencies": {
     "jspdf": "^2.5.2",
