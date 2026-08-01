@@ -344,6 +344,8 @@ export async function ingestFile(
       document.status = 'done';
     }
 
+    document.words = words;
+
     const detected = new Set<ModuleId>(classification.modules);
     if (micro.length) detected.add('microbiology');
     if (ecg.length) detected.add('ecg');

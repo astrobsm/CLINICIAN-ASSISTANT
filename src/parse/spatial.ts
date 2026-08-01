@@ -24,6 +24,70 @@ export interface SpatialOptions {
   tolerance?: number;
 }
 
+export interface WordRow {
+  words: WordBox[];
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+  text: string;
+}
+
+/** Group words into the visual rows they occupy. */
+export function groupRows(words: WordBox[], opts: SpatialOptions = {}): WordRow[] {
+  const { minConfidence = 25, tolerance = 0.6 } = opts;
+
+  const usable = words.filter((w) => {
+    const h = w.bbox.y1 - w.bbox.y0;
+    const wid = w.bbox.x1 - w.bbox.x0;
+    return w.confidence >= minConfidence && h > 0 && wid > 0 && w.text.trim().length > 0;
+  });
+  if (!usable.length) return [];
+
+  const heights = usable.map((w) => w.bbox.y1 - w.bbox.y0).sort((a, b) => a - b);
+  const medianHeight = heights[heights.length >> 1] || 1;
+  const band = medianHeight * tolerance;
+  const medianWidth = medianHeight * 0.6;
+
+  const sorted = [...usable].sort(
+    (a, b) => (a.bbox.y0 + a.bbox.y1) / 2 - (b.bbox.y0 + b.bbox.y1) / 2,
+  );
+
+  const groups: { centre: number; count: number; words: WordBox[] }[] = [];
+  for (const w of sorted) {
+    const centre = (w.bbox.y0 + w.bbox.y1) / 2;
+    const last = groups[groups.length - 1];
+    if (last && Math.abs(centre - last.centre) <= band) {
+      last.centre = (last.centre * last.count + centre) / (last.count + 1);
+      last.count++;
+      last.words.push(w);
+    } else {
+      groups.push({ centre, count: 1, words: [w] });
+    }
+  }
+
+  return groups.map((g) => {
+    const ordered = [...g.words].sort((a, b) => a.bbox.x0 - b.bbox.x0);
+    let text = '';
+    let prevEnd: number | null = null;
+    for (const w of ordered) {
+      if (prevEnd !== null) {
+        const gap = w.bbox.x0 - prevEnd;
+        text += gap > medianWidth * 2.5 ? '   ' : ' ';
+      }
+      text += w.text;
+      prevEnd = w.bbox.x1;
+    }
+    return {
+      words: ordered,
+      text: text.trim(),
+      bbox: {
+        x0: Math.min(...ordered.map((w) => w.bbox.x0)),
+        y0: Math.min(...ordered.map((w) => w.bbox.y0)),
+        x1: Math.max(...ordered.map((w) => w.bbox.x1)),
+        y1: Math.max(...ordered.map((w) => w.bbox.y1)),
+      },
+    };
+  }).filter((r) => r.text.length > 0);
+}
+
 export function rowsFromWords(words: WordBox[], opts: SpatialOptions = {}): string[] {
   const { minConfidence = 25, tolerance = 0.6 } = opts;
 

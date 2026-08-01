@@ -104,6 +104,7 @@ export default function App() {
             progress={session.progress}
             addFiles={session.addFiles}
             removeDocument={session.removeDocument}
+            session={session}
           />
         )}
         {tab === 'review' && <ReviewPanel session={session} />}

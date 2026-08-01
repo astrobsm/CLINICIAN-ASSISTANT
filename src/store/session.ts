@@ -6,7 +6,7 @@
  * persistence is an explicit clinician action producing an encrypted archive
  * file (see store/archive.ts).
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { analyse } from '../clinical/analyse';
 import { emptyExtraction, type Extraction } from '../clinical/context';
 import type {
@@ -54,6 +54,15 @@ export interface SessionApi {
   clearAll: () => void;
   snapshot: () => SessionSnapshot;
   restore: (s: SessionSnapshot) => void;
+
+  /**
+   * The original file for a scanned document, kept in memory so that assisted
+   * extraction can be offered after the fact without asking for the file
+   * again. Never persisted.
+   */
+  fileFor: (documentId: string) => File | undefined;
+  /** Replace a document's values with those from assisted extraction. */
+  applyAssisted: (documentId: string, analytes: Analyte[], model: string) => void;
 }
 
 export function useSession(): SessionApi {
@@ -62,6 +71,7 @@ export function useSession(): SessionApi {
   const [documents, setDocuments] = useState<ScannedDocument[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<IngestProgress | null>(null);
+  const filesRef = useRef(new Map<string, File>());
 
   const setPatient = useCallback((patch: Partial<PatientContext>) => {
     setPatientState((prev) => {
@@ -92,6 +102,7 @@ export function useSession(): SessionApi {
         setProgress({ fileName: file.name, stage: 'Queued', progress: 0 });
         const result = await ingestFile(file, patient, setProgress);
 
+        filesRef.current.set(result.document.id, file);
         setDocuments((prev) => [...prev, result.document]);
 
         setExtraction((prev) => {
@@ -239,10 +250,31 @@ export function useSession(): SessionApi {
     [],
   );
 
+  const fileFor = useCallback((documentId: string) => filesRef.current.get(documentId), []);
+
+  /**
+   * Adopt assisted-extraction values for one document.
+   *
+   * Clinician corrections survive: a value already checked by a person is not
+   * replaced by one a model produced.
+   */
+  const applyAssisted = useCallback((documentId: string, incoming: Analyte[], model: string) => {
+    setExtraction((prev) => {
+      const byKey = new Map<string, Analyte>(prev.analytes.map((a) => [a.key, a]));
+      for (const a of incoming) {
+        if (byKey.get(a.key)?.edited) continue;
+        byKey.set(a.key, { ...a, sourceId: documentId });
+      }
+      return { ...prev, analytes: [...byKey.values()] };
+    });
+    setDocuments((prev) => prev.map((d) => (d.id === documentId ? { ...d, assistedModel: model, error: undefined } : d)));
+  }, []);
+
   const clearAll = useCallback(() => {
     setPatientState(emptyPatient());
     setExtraction(emptyExtraction());
     setDocuments([]);
+    filesRef.current.clear();
     void terminateOcr();
     terminateWaveformWorker();
   }, []);
@@ -270,8 +302,9 @@ export function useSession(): SessionApi {
             : e,
         ),
       },
-      // previewUrl is a transient object URL and must not be archived.
-      documents: documents.map(({ previewUrl, ...rest }) => rest),
+      // previewUrl is a transient object URL and must not be archived. Word
+      // boxes are reproducible from the source and would bloat the archive.
+      documents: documents.map(({ previewUrl, words, ...rest }) => rest),
       savedAt: new Date().toISOString(),
     }),
     [patient, extraction, documents],
@@ -293,5 +326,6 @@ export function useSession(): SessionApi {
     addFiles, removeDocument, updateAnalyte, removeAnalyte, addManualAnalyte,
     updateObservation, setEcgFeature, updateEcgField, addBlankEcg,
     updateMicroSusceptibility, clearAll, snapshot, restore,
+    fileFor, applyAssisted,
   };
 }

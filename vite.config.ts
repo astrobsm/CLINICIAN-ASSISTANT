@@ -1,6 +1,7 @@
 import { networkInterfaces } from 'node:os';
 import { readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
@@ -19,6 +20,56 @@ function localAddresses(): string[] {
     }
   }
   return [...out];
+}
+
+/**
+ * Serve the Vercel function locally.
+ *
+ * `/api/extract` is a serverless function in production and does not exist in
+ * a static preview, so without this the assisted-extraction path can only be
+ * exercised after deploying. Mounting the same handler in the dev and preview
+ * servers gives local parity, and lets the redaction checks run against the
+ * code that actually ships.
+ */
+function localApi(): Plugin {
+  const mount = (server: { middlewares: { use: (fn: (req: any, res: any, next: () => void) => void) => void } }) => {
+    server.middlewares.use(async (req, res, next) => {
+      if (!req.url?.startsWith('/api/extract')) return next();
+      try {
+        // Resolved at run time from disk, and marked so the config bundler
+        // leaves it alone — the function is deployed separately, not bundled.
+        const handlerUrl = pathToFileURL(join(process.cwd(), 'api', 'extract.js')).href;
+        const mod = await import(/* @vite-ignore */ `${handlerUrl}?t=${Date.now()}`);
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const raw = Buffer.concat(chunks).toString('utf8');
+
+        const shim = {
+          status(code: number) { res.statusCode = code; return shim; },
+          setHeader(k: string, v: string) { res.setHeader(k, v); return shim; },
+          json(body: unknown) {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(body));
+            return shim;
+          },
+        };
+        await mod.default(
+          { method: req.method, headers: req.headers, body: raw ? JSON.parse(raw) : undefined },
+          shim,
+        );
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+      }
+    });
+  };
+
+  return {
+    name: 'local-api',
+    configureServer: mount,
+    configurePreviewServer: mount,
+  };
 }
 
 /**
@@ -68,6 +119,7 @@ export default defineConfig({
     react(),
     ...(process.env.CA_HTTP ? [] : [basicSsl({ name: 'clinician-assistant', domains: localAddresses() })]),
     assetManifest(),
+    localApi(),
   ],
   worker: { format: 'es' },
   optimizeDeps: { exclude: ['tesseract.js'] },

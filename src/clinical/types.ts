@@ -292,6 +292,14 @@ export interface ScannedDocument {
   addedAt: string;
   status: 'queued' | 'ocr' | 'parsing' | 'done' | 'error';
   error?: string;
+  /**
+   * Recognised words with their positions, retained so that identifiers can be
+   * located and painted out if assisted extraction is later requested for this
+   * document. Dropped from the encrypted archive — it is reproducible.
+   */
+  words?: { text: string; bbox: { x0: number; y0: number; x1: number; y1: number }; confidence: number }[];
+  /** Set when values for this document came from assisted extraction. */
+  assistedModel?: string;
 }
 
 /** Per-module analysis output. */

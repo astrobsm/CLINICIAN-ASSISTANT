@@ -33,10 +33,15 @@ npm run preview      # http://localhost:4173
 Verification:
 
 ```bash
-npm run verify       # headless engine test — parsing, analysis, correlation (39 assertions)
-npm run verify:ecg   # ECG waveform pipeline against synthetic ECGs of known truth (53 assertions)
-npm run smoke        # drives the built app in a real browser, incl. live OCR, ECG digitisation and PDF export
+npm run verify           # engine — parsing, analysis, correlation
+npm run verify:ecg       # ECG waveform pipeline against synthetic ECGs of known truth (53 assertions)
+npm run verify:lab       # laboratory table extraction from a rendered replica of a real bordered report
+npm run verify:redaction # de-identification: redacted images are read back and must be illegible
+npm run verify:pwa       # installability, then cuts the network and checks the app still analyses and scans
+npm run smoke            # drives the built app in a browser: live OCR, ECG digitisation, PDF export
 ```
+
+The browser suites need the app running (`npm run preview`).
 
 ### Offline OCR assets
 
@@ -222,7 +227,39 @@ Saved cases live in a folder belonging to this application on the device, using 
 
 `npm run verify:pwa` exercises the whole cycle: create, save, reload the page, reject a wrong passphrase, reopen, restore the patient into the session, delete — and reads back every file the library wrote to confirm **no patient identifier appears in plaintext anywhere on disk**.
 
+## Deploying to Vercel
+
+Import the repository at [vercel.com/new](https://vercel.com/new). `vercel.json` sets the build, caching and security headers, so there is nothing to configure. The OCR runtime is not committed — it is fetched during `npm install` by the postinstall script, which runs on Vercel automatically.
+
+The content security policy restricts `connect-src` to the deployment's own origin, so the browser itself enforces that nothing can be sent to any third party except through the one endpoint described below.
+
+### Optional: assisted extraction
+
+Off unless you configure it, and off in the interface unless the clinician switches it on.
+
+| Environment variable | Required | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | yes, to enable the feature | Server-side key. Never reaches the browser. |
+| `OPENAI_MODEL` | no | Overrides the model preference order, which is otherwise `gpt-5` then `gpt-4o`. |
+| `AI_APP_TOKEN` | no | A token the client must present. Raises the effort needed to abuse the endpoint; a value shipped in a browser bundle is not a secret. |
+
+Set these in **Project → Settings → Environment Variables** and redeploy. Leave `OPENAI_API_KEY` unset and the endpoint reports itself unavailable, the interface offers nothing, and the application is exactly as it was.
+
+**Set a spending limit on the OpenAI account.** The endpoint is reachable by anyone who can reach the deployment. It applies a per-instance rate limit and a payload cap, but a shared key on a public endpoint is inherently exposed.
+
+Locally, `npm run dev` and `npm run preview` mount the same function, so the path can be exercised before deploying.
+
 ## Privacy model
+
+**Assisted extraction is the one thing that transmits, and it is opt-in twice** — the deployment must be configured with a key, and the clinician must switch it on. When used, an image of the report is sent to a vision model to transcribe values on-device recognition missed. Before anything leaves:
+
+- Identifiers are painted out — name, hospital and record numbers, date of birth, address, telephone, consultant, ward — matched both by field label and against the patient record you entered, with whole rows removed rather than individual words.
+- The redacted image is shown to you with a list of what was removed, and you confirm it. If nothing identifiable was found, that is said plainly rather than passed over: it may mean the header was never read.
+- The first transmission of a session states what is being sent and to where.
+
+`npm run verify:redaction` renders a report carrying a name, hospital number, date of birth, address, consultant and telephone number, redacts it, then **reads the redacted image back through the recognition engine** — every identifier must be illegible and the clinical values must survive. The same suite confirms that with the feature off, no request leaves the origin at all.
+
+Everything else is unchanged:
 
 - The working session lives **in memory only**. It is never written to `localStorage` or any other automatic store, and is discarded when the tab closes.
 - Persistence is always an explicit clinician action: the encrypted case library above, or an exported encrypted archive file. Both use the same scheme, and neither passphrase is recoverable.

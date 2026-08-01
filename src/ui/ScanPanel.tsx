@@ -3,7 +3,9 @@ import { Card, Empty } from './common';
 import { MODULE_LABEL, type ScannedDocument } from '../clinical/types';
 import type { IngestProgress } from '../parse/pipeline';
 import { ocrAssetsAvailable } from '../ocr/ocrEngine';
+import type { SessionApi } from '../store/session';
 import { SAMPLE_REPORTS, sampleEcgImageFile, sampleFiles } from '../demo/sampleReports';
+import { AssistPanel } from './AssistPanel';
 
 const ACCEPT = 'image/*,application/pdf,text/plain,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt';
 
@@ -13,12 +15,14 @@ export function ScanPanel({
   progress,
   addFiles,
   removeDocument,
+  session,
 }: {
   documents: ScannedDocument[];
   busy: boolean;
   progress: IngestProgress | null;
   addFiles: (files: FileList | File[]) => Promise<void>;
   removeDocument: (id: string) => void;
+  session: SessionApi;
 }) {
   const [over, setOver] = useState(false);
   const [assets, setAssets] = useState<boolean | null>(null);
@@ -143,6 +147,7 @@ export function ScanPanel({
           ))
         )}
       </Card>
+      <AssistPanel session={session} />
     </div>
   );
 }
