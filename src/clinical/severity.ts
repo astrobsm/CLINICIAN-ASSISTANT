@@ -26,8 +26,17 @@ function spanOf(ref: Range, value: number): number {
   return Math.max(Math.abs(bound) * 0.5, 1e-9);
 }
 
-export function gradeValue(def: AnalyteDef, value: number, patient: PatientContext): Grade {
-  const ref = refForPatient(def, patient);
+export function gradeValue(
+  def: AnalyteDef,
+  value: number,
+  patient: PatientContext,
+  override?: Range,
+): Grade {
+  // An interval printed on the report takes precedence: it belongs to the
+  // assay that produced the number.
+  const ref = override && (override.low !== undefined || override.high !== undefined)
+    ? override
+    : refForPatient(def, patient);
   if (!ref || (ref.low === undefined && ref.high === undefined)) {
     return { severity: 'normal', flag: 'normal', deviation: 0, ref };
   }

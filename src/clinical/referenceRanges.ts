@@ -47,7 +47,7 @@ export const ANALYTES: AnalyteDef[] = [
   }),
   D({
     key: 'hct', label: 'Packed Cell Volume (PCV/Haematocrit)', module: 'fbc', unitRule: 'hct', unit: '%',
-    synonyms: ['packed cell volume', 'haematocrit', 'hematocrit', 'pcv', 'hct'],
+    synonyms: ['packed cell volume', 'haematocrit', 'hematocrit', 'heamatocrit', 'haematocrit (pcv)', 'pcv', 'hct'],
     refMale: { low: 40, high: 52 }, refFemale: { low: 36, high: 47 },
     crit: { low: 21, high: 60 }, decimals: 1, plausible: { low: 5, high: 80 },
   }),
@@ -74,7 +74,7 @@ export const ANALYTES: AnalyteDef[] = [
   }),
   D({
     key: 'rdw', label: 'Red Cell Distribution Width', module: 'fbc', unitRule: 'rdw', unit: '%',
-    synonyms: ['red cell distribution width', 'rdw-cv', 'rdw cv', 'rdw'],
+    synonyms: ['red cell distribution width', 'rdw-cv', 'rdw cv', 'rdw-sd', 'rdw'],
     ref: { low: 11.5, high: 14.5 }, decimals: 1, plausible: { low: 8, high: 40 },
   }),
   D({
@@ -113,7 +113,7 @@ export const ANALYTES: AnalyteDef[] = [
   }),
   D({
     key: 'plt', label: 'Platelet Count', module: 'fbc', unitRule: 'plt', unit: 'x10^9/L',
-    synonyms: ['platelet count', 'platelets', 'thrombocyte count', 'plt'],
+    synonyms: ['platelet count', 'platelets', 'platelet', 'thrombocyte count', 'thrombocytes', 'plt'],
     ref: { low: 150, high: 400 },
     crit: { low: 50, high: 1000 }, lifeThreat: { low: 20, high: 1500 },
     decimals: 0, plausible: { low: 1, high: 3000 },

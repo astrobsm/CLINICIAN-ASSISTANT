@@ -60,18 +60,24 @@ export class ClinicalContext {
     return this.flag(key) === 'low';
   }
 
+  /** The interval the report printed, where it stated one. */
+  private printedRange(a: Analyte): { low?: number; high?: number } | undefined {
+    if (a.printedRefLow === undefined && a.printedRefHigh === undefined) return undefined;
+    return { low: a.printedRefLow, high: a.printedRefHigh };
+  }
+
   flag(key: string): 'low' | 'high' | 'normal' | null {
     const a = this.byKey.get(key);
     const def = ANALYTE_BY_KEY[key];
     if (!a || !def) return null;
-    return gradeValue(def, a.value, this.patient).flag;
+    return gradeValue(def, a.value, this.patient, this.printedRange(a)).flag;
   }
 
   severityOf(key: string): Severity {
     const a = this.byKey.get(key);
     const def = ANALYTE_BY_KEY[key];
     if (!a || !def) return 'normal';
-    return gradeValue(def, a.value, this.patient).severity;
+    return gradeValue(def, a.value, this.patient, this.printedRange(a)).severity;
   }
 
   refLow(key: string): number | undefined {

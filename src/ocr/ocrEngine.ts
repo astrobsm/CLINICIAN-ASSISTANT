@@ -20,6 +20,7 @@ let workerPromise: Promise<Worker> | null = null;
 let progressSink: ((p: OcrProgress) => void) | null = null;
 
 /** Characters that appear in laboratory reports; restricting the set reduces misreads. */
+// Retained for reference; not applied — see the note where parameters are set.
 const LAB_CHARSET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' +
   '.,:;()[]{}<>/\\-+*%^#&\'"|=_ \n\t';
@@ -40,9 +41,11 @@ async function getWorker(): Promise<Worker> {
         }
       },
     }).then(async (w) => {
+      // No character whitelist: it constrains the LSTM decoder and measurably
+      // degrades recognition on printed reports. Implausible readings are
+      // rejected downstream by the per-analyte plausibility guards instead.
       await w.setParameters({
         preserve_interword_spaces: '1',
-        tessedit_char_whitelist: LAB_CHARSET,
         tessedit_pageseg_mode: PSM.AUTO,
       });
       return w;
@@ -98,60 +101,91 @@ function collectWords(data: unknown): OcrWordBox[] {
  * Two passes are attempted where confidence is poor: the default page
  * segmentation, then a single-block mode which suits dense tabular reports.
  */
-export async function recognisePage(
+export interface RecogniseOptions {
+  /**
+   * Page segmentation modes to try. More than one is worth the time on a
+   * printed results table, where automatic segmentation often returns a
+   * fraction of the page; a single pass is right for an image whose content
+   * is already known, such as an extracted ECG trace, where extra passes only
+   * invent text from the waveform.
+   */
+  modes?: PSM[];
+}
+
+/** Run several segmentation passes and return them all, richest first. */
+export async function recognisePasses(
   source: Blob | HTMLCanvasElement | HTMLImageElement,
   onProgress?: (p: OcrProgress) => void,
-): Promise<OcrResult> {
+  modes: PSM[] = [PSM.AUTO, PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT],
+): Promise<OcrResult[]> {
   progressSink = onProgress ?? null;
   try {
     const worker = await getWorker();
-
-    let input: HTMLCanvasElement;
-    if (source instanceof HTMLCanvasElement) {
-      input = source;
-    } else if (source instanceof Blob) {
-      const url = URL.createObjectURL(source);
-      try {
-        const img = new Image();
-        await new Promise<void>((res, rej) => {
-          img.onload = () => res();
-          img.onerror = () => rej(new Error('Unable to decode image'));
-          img.src = url;
-        });
-        input = preprocessToCanvas(img);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    } else {
-      input = preprocessToCanvas(source);
-    }
-
+    const input = await toCanvas(source);
     const output = { text: true, blocks: true } as const;
-    const first = await worker.recognize(input, undefined, output);
-    let best: OcrResult = {
-      text: first.data.text ?? '',
-      confidence: (first.data.confidence ?? 0) / 100,
-      words: collectWords(first.data),
-    };
+    const results: OcrResult[] = [];
 
-    if (best.confidence < 0.62 || best.text.trim().length < 40) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
-      const second = await worker.recognize(input, undefined, output);
-      const alt: OcrResult = {
-        text: second.data.text ?? '',
-        confidence: (second.data.confidence ?? 0) / 100,
-        words: collectWords(second.data),
-      };
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
-      if (alt.confidence > best.confidence || alt.text.trim().length > best.text.trim().length * 1.4) {
-        best = alt;
-      }
+    for (const mode of modes) {
+      await worker.setParameters({ tessedit_pageseg_mode: mode });
+      const res = await worker.recognize(input, undefined, output);
+      results.push({
+        text: res.data.text ?? '',
+        confidence: (res.data.confidence ?? 0) / 100,
+        words: collectWords(res.data),
+      });
     }
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
 
-    return best;
+    return results.sort((a, b) => textYield(b) - textYield(a));
   } finally {
     progressSink = null;
   }
+}
+
+/**
+ * A rough measure of how much usable data a pass produced.
+ *
+ * Deliberately not the engine's own confidence, which is the mean over the
+ * words it did recognise: a pass that reads one row of a table and abandons
+ * the rest reports near-perfect confidence on almost nothing. Pairs of a word
+ * followed by a number are counted, because that is the shape of a result row.
+ */
+function textYield(r: OcrResult): number {
+  const pairs = (r.text.match(/[A-Za-z]{3,}[^\n\d]{0,24}\d/g) ?? []).length;
+  const numbers = (r.text.match(/\d+(?:[.,]\d+)?/g) ?? []).length;
+  const words = (r.text.match(/[A-Za-z]{3,}/g) ?? []).length;
+  return pairs * 4 + numbers + words * 0.5 + r.confidence * 3;
+}
+
+async function toCanvas(
+  source: Blob | HTMLCanvasElement | HTMLImageElement,
+): Promise<HTMLCanvasElement> {
+  if (source instanceof HTMLCanvasElement) return source;
+  if (source instanceof Blob) {
+    const url = URL.createObjectURL(source);
+    try {
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error('Unable to decode image'));
+        img.src = url;
+      });
+      return preprocessToCanvas(img);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  return preprocessToCanvas(source);
+}
+
+export async function recognisePage(
+  source: Blob | HTMLCanvasElement | HTMLImageElement,
+  onProgress?: (p: OcrProgress) => void,
+  options: RecogniseOptions = {},
+): Promise<OcrResult> {
+  const modes = options.modes ?? [PSM.AUTO, PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT];
+  const passes = await recognisePasses(source, onProgress, modes);
+  return passes[0] ?? { text: '', confidence: 0, words: [] };
 }
 
 /** Release the worker — called when the session is cleared. */

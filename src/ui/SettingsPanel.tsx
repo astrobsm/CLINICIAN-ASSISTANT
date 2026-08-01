@@ -3,7 +3,7 @@ import { Card, Field } from './common';
 import { ANALYTES, ANALYTE_BY_KEY, describeRange } from '../clinical/referenceRanges';
 import { DEFAULT_INSTITUTION, saveInstitution, type InstitutionConfig } from '../config/institution';
 import { MODULE_LABEL, type ModuleId } from '../clinical/types';
-import { NexoraLogo } from '../brand/NexoraLogo';
+import { NexoraLogo, getBrandLogo, setBrandLogo } from '../brand/NexoraLogo';
 import { OfflinePanel } from './OfflinePanel';
 
 const MODULES: ModuleId[] = ['renal', 'electrolytes', 'fbc', 'coagulation', 'lft', 'abg', 'inflammatory', 'cardiac', 'urinalysis', 'ecg'];
@@ -18,6 +18,8 @@ export function SettingsPanel({
   onClearSession: () => void;
 }) {
   const [overrideKey, setOverrideKey] = useState('');
+  const [, setBrandTick] = useState(0);
+  const brandRef = useRef<HTMLInputElement>(null);
   const [low, setLow] = useState('');
   const [high, setHigh] = useState('');
   const logoRef = useRef<HTMLInputElement>(null);
@@ -160,6 +162,33 @@ export function SettingsPanel({
           <div style={{ background: '#05070d', border: '1px solid var(--line)', borderRadius: 8, padding: '18px 16px', display: 'flex', justifyContent: 'center' }}>
             <NexoraLogo size={54} />
           </div>
+          <div className="btn-row" style={{ marginTop: 10 }}>
+            <button className="btn small" onClick={() => brandRef.current?.click()}>Use original logo artwork…</button>
+            {getBrandLogo() && (
+              <button className="btn small danger" onClick={() => { setBrandLogo(null); setBrandTick((n) => n + 1); }}>
+                Revert to the built-in mark
+              </button>
+            )}
+          </div>
+          <input
+            ref={brandRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) {
+                const r = new FileReader();
+                r.onload = () => { setBrandLogo(String(r.result)); setBrandTick((n) => n + 1); };
+                r.readAsDataURL(f);
+              }
+              e.target.value = '';
+            }}
+          />
+          <p className="hint" style={{ marginTop: 4 }}>
+            The mark above is a vector rendition. Supplying the original artwork replaces it everywhere, including in
+            the printed report. Stored on this device only.
+          </p>
           <p className="small muted" style={{ marginBottom: 4 }}>
             <strong>Clinician Assistant</strong> — offline multi-modal clinical diagnostic analysis.
           </p>

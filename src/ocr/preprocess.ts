@@ -14,6 +14,8 @@ export interface PreprocessOptions {
   binarise?: boolean;
   /** Invert (for white-on-black monitor screenshots). */
   autoInvert?: boolean;
+  /** Erase table ruling before recognition. */
+  stripRules?: boolean;
 }
 
 export async function loadImage(source: Blob | string): Promise<HTMLImageElement> {
@@ -93,7 +95,7 @@ export function scaleToCanvas(
 
 /** Greyscale, contrast-stretch and threshold a canvas for OCR. */
 export function enhanceForOcr(source: HTMLCanvasElement, opts: PreprocessOptions = {}): HTMLCanvasElement {
-  const { binarise = true, autoInvert = true } = opts;
+  const { binarise = true, autoInvert = true, stripRules = true } = opts;
   const w = source.width;
   const h = source.height;
 
@@ -105,8 +107,76 @@ export function enhanceForOcr(source: HTMLCanvasElement, opts: PreprocessOptions
 
   const imgData = ctx.getImageData(0, 0, w, h);
   applyEnhancement(imgData, w, h, binarise, autoInvert);
+  if (binarise && stripRules) removeRuledLines(imgData, w, h);
   ctx.putImageData(imgData, 0, 0);
   return canvas;
+}
+
+/**
+ * Erase the ruling of a table.
+ *
+ * Almost every laboratory report is a bordered table, and the borders wreck
+ * recognition: page-layout analysis treats each ruled cell as its own region
+ * and returns a fraction of the text, while reporting high confidence on the
+ * little it did read. Removing the rules first is what makes a printed
+ * results table readable at all.
+ *
+ * A pixel is part of a rule when it sits in a long unbroken dark run in one
+ * direction and only a short run in the other. Requiring the run to be thin
+ * perpendicular to its length is what protects letter strokes, which are short
+ * in both directions, and bold headings, which are thick.
+ */
+export function removeRuledLines(imgData: ImageData, w: number, h: number): void {
+  const d = imgData.data;
+  const dark = (i: number) => d[i * 4] < 128;
+
+  const minH = Math.max(40, Math.round(w * 0.18));
+  const minV = Math.max(40, Math.round(h * 0.06));
+  const maxThickness = Math.max(4, Math.round(Math.min(w, h) * 0.006));
+
+  const hRun = new Int32Array(w * h);
+  const vRun = new Int32Array(w * h);
+
+  // Longest horizontal dark run through each pixel.
+  for (let y = 0; y < h; y++) {
+    let start = -1;
+    for (let x = 0; x <= w; x++) {
+      const isDark = x < w && dark(y * w + x);
+      if (isDark && start < 0) start = x;
+      if (!isDark && start >= 0) {
+        const len = x - start;
+        for (let k = start; k < x; k++) hRun[y * w + k] = len;
+        start = -1;
+      }
+    }
+  }
+
+  // Longest vertical dark run through each pixel.
+  for (let x = 0; x < w; x++) {
+    let start = -1;
+    for (let y = 0; y <= h; y++) {
+      const isDark = y < h && dark(y * w + x);
+      if (isDark && start < 0) start = y;
+      if (!isDark && start >= 0) {
+        const len = y - start;
+        for (let k = start; k < y; k++) vRun[k * w + x] = len;
+        start = -1;
+      }
+    }
+  }
+
+  const erase: number[] = [];
+  for (let i = 0; i < w * h; i++) {
+    const isRule =
+      (hRun[i] >= minH && vRun[i] <= maxThickness) ||
+      (vRun[i] >= minV && hRun[i] <= maxThickness);
+    if (isRule) erase.push(i);
+  }
+
+  for (const i of erase) {
+    const p = i * 4;
+    d[p] = 255; d[p + 1] = 255; d[p + 2] = 255;
+  }
 }
 
 export function preprocessToCanvas(

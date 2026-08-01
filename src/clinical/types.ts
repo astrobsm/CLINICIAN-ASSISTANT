@@ -138,6 +138,17 @@ export interface Analyte {
   manual?: boolean;
   refLow?: number;
   refHigh?: number;
+  /**
+   * The reference interval printed on the report itself.
+   *
+   * The issuing laboratory's interval is specific to its assay and population
+   * and is the correct one to grade against — a built-in default can call a
+   * result normal that the laboratory flagged, and vice versa. Where the
+   * report states its interval it is used, and the report says so.
+   */
+  printedRefLow?: number;
+  printedRefHigh?: number;
+  refSource?: 'report' | 'built-in';
   flag?: 'low' | 'high' | 'normal';
   /** Which scanned document this came from. */
   sourceId?: string;

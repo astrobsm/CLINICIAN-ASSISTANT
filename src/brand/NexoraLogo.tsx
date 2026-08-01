@@ -9,34 +9,50 @@
  */
 import { useEffect, useState } from 'react';
 
-const PNG_PATH = new URL('assets/nexora-logo.png', document.baseURI).href;
+/**
+ * Optional override with the original artwork.
+ *
+ * Supplied through Settings and kept in local storage rather than probed for
+ * at a fixed path: probing logs a 404 on every load when the file is absent,
+ * which is the normal case, and dropping a file into a folder is not something
+ * that can be done on a phone at all.
+ */
+const STORAGE_KEY = 'nexora.clinician-assistant.brand-logo.v1';
 
-let pngStatus: 'unknown' | 'present' | 'absent' = 'unknown';
+let overrideDataUrl: string | null = null;
+let loaded = false;
 const listeners = new Set<() => void>();
 
-function probePng() {
-  if (pngStatus !== 'unknown') return;
-  const img = new Image();
-  img.onload = () => {
-    pngStatus = img.naturalWidth > 8 ? 'present' : 'absent';
-    listeners.forEach((l) => l());
-  };
-  img.onerror = () => {
-    pngStatus = 'absent';
-    listeners.forEach((l) => l());
-  };
-  img.src = PNG_PATH;
+function readOverride(): string | null {
+  if (!loaded) {
+    try { overrideDataUrl = localStorage.getItem(STORAGE_KEY); } catch { overrideDataUrl = null; }
+    loaded = true;
+  }
+  return overrideDataUrl;
 }
 
-function useOfficialLogo(): boolean {
+export function setBrandLogo(dataUrl: string | null): void {
+  overrideDataUrl = dataUrl;
+  loaded = true;
+  try {
+    if (dataUrl) localStorage.setItem(STORAGE_KEY, dataUrl);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch { /* private mode — the override simply does not persist */ }
+  listeners.forEach((l) => l());
+}
+
+export function getBrandLogo(): string | null {
+  return readOverride();
+}
+
+function useBrandLogo(): string | null {
   const [, force] = useState(0);
   useEffect(() => {
     const l = () => force((n) => n + 1);
     listeners.add(l);
-    probePng();
     return () => { listeners.delete(l); };
   }, []);
-  return pngStatus === 'present';
+  return readOverride();
 }
 
 export interface LogoProps {
@@ -62,12 +78,12 @@ function Monogram({ print }: { print?: boolean }) {
 }
 
 export function NexoraLogo({ size = 40, markOnly = false, print = false, className }: LogoProps) {
-  const official = useOfficialLogo();
+  const override = useBrandLogo();
 
-  if (official && !markOnly) {
+  if (override && !markOnly) {
     return (
       <img
-        src={PNG_PATH}
+        src={override}
         alt="NEXORA Innovations — Building Solutions"
         height={size}
         style={{ height: size, width: 'auto', display: 'block' }}

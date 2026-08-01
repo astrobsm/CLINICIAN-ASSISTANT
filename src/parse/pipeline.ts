@@ -4,7 +4,11 @@
  * File → (PDF text layer | OCR) → classification → module parsers → extraction
  * fragments. Runs entirely on the device.
  */
-import { recognisePage, type OcrWordBox } from '../ocr/ocrEngine';
+import { recognisePage, recognisePasses, type OcrResult, type OcrWordBox } from '../ocr/ocrEngine';
+import { PSM } from 'tesseract.js';
+
+/** Automatic page segmentation. */
+const PSM_AUTO = PSM.AUTO;
 import { enhanceForOcr, loadImage, scaleToCanvas } from '../ocr/preprocess';
 import { readPdf } from '../ocr/pdf';
 import { analyseEcgImage } from '../ecg/client';
@@ -26,7 +30,8 @@ function traceMaskToCanvas(masks: Masks): HTMLCanvasElement {
   ctx.putImageData(out, 0, 0);
   return canvas;
 }
-import { parseDemographics, parseLabValues, resolvePercentages, type ParsedDemographics } from './labParser';
+import { parseDemographics, parseLabValues, resolvePercentages, type LabParseResult, type ParsedDemographics } from './labParser';
+import { spatialText } from './spatial';
 import { parseEcg } from './ecgParser';
 import { parseMicrobiology } from './microParser';
 import type { Analyte, EcgData, MicrobiologyReport, ModuleId, Observation, PatientContext, ScannedDocument } from '../clinical/types';
@@ -55,6 +60,8 @@ interface ExtractedContent {
   pageCount: number;
   method: string;
   words: OcrWordBox[];
+  /** Every segmentation pass, so the caller can pick by parse yield. */
+  passes?: OcrResult[];
   /**
    * Colour raster of the page, retained so that an ECG can be digitised from
    * the trace itself. The grid is printed in red and the trace in black, so
@@ -156,13 +163,22 @@ async function extractText(
   const masks = buildMasks(data.data, colour.width, colour.height);
   const ocrInput = masks.colourGrid ? traceMaskToCanvas(masks) : enhanceForOcr(colour);
 
-  const res = await recognisePage(ocrInput, (p) =>
-    onProgress({ fileName: name, stage: `Recognising: ${p.stage}`, progress: 0.1 + p.progress * 0.7 }),
-  );
+  // An ECG trace gets one pass: extra segmentation modes only invent words
+  // from the waveform, and those spurious boxes displace the lead labels that
+  // panel assignment depends on. Everything else gets several passes, because
+  // a printed results table regularly defeats automatic segmentation.
+  const passes = masks.colourGrid
+    ? [await recognisePage(ocrInput, (p) =>
+        onProgress({ fileName: name, stage: `Recognising: ${p.stage}`, progress: 0.1 + p.progress * 0.7 }),
+        { modes: [PSM_AUTO] })]
+    : await recognisePasses(ocrInput, (p) =>
+        onProgress({ fileName: name, stage: `Recognising: ${p.stage}`, progress: 0.1 + p.progress * 0.7 }));
+  const res = passes[0];
 
   return {
     text: res.text,
     confidence: res.confidence,
+    passes,
     pageCount: 1,
     method: 'OCR (image)',
     // Word boxes are recognised on the upscaled canvas; rescale them so they
@@ -197,7 +213,7 @@ export async function ingestFile(
   };
 
   try {
-    const { text, confidence, pageCount, method, words, raster } = await extractText(file, onProgress);
+    const { text, confidence, pageCount, method, words, raster, passes } = await extractText(file, onProgress);
     document.rawText = text;
     document.meanConfidence = confidence;
     document.pageCount = pageCount;
@@ -215,9 +231,45 @@ export async function ingestFile(
 
     // Laboratory values — run for every document, since panels are frequently
     // combined on one page and the classifier only decides the heading.
-    const lab = parseLabValues(text, patient, id, confidence);
-    const derivedAbs = resolvePercentages(lab, patient, id, confidence);
+    //
+    // Two readings are attempted: the text stream as the recogniser ordered
+    // it, and the rows rebuilt from where the words physically sit. Bordered
+    // tables regularly defeat the first and are recovered by the second, so
+    // whichever yields more is used.
+    const readings: { source: string; lab: LabParseResult; derived: Analyte[] }[] = [];
+    const attempt = (source: string, candidate: string) => {
+      if (!candidate.trim()) return;
+      const parsed = parseLabValues(candidate, patient, id, confidence);
+      const extra = resolvePercentages(parsed, patient, id, confidence);
+      readings.push({ source, lab: parsed, derived: extra });
+    };
+
+    // Each recognition pass is offered to the parser both as its own text
+    // stream and as rows rebuilt from where the words physically sit. The
+    // combination that yields the most values wins, because the number of
+    // clinical values recovered is the only measure that matters here — a pass
+    // can look confident and read almost nothing.
+    for (const [i, pass] of (passes ?? [{ text, confidence, words }]).entries()) {
+      attempt(`pass ${i + 1} text flow`, pass.text);
+      if (pass.words.length >= 8) attempt(`pass ${i + 1} table geometry`, spatialText(pass.words));
+    }
+    if (!passes) {
+      attempt('text flow', text);
+      if (words.length >= 8) attempt('table geometry', spatialText(words));
+    }
+
+    readings.sort(
+      (a, b) =>
+        (b.lab.analytes.length + b.derived.length + b.lab.observations.length) -
+        (a.lab.analytes.length + a.derived.length + a.lab.observations.length),
+    );
+    const best = readings[0];
+    const lab = best?.lab ?? { analytes: [], percentages: [], observations: [] };
+    const derivedAbs = best?.derived ?? [];
     const analytes = [...lab.analytes, ...derivedAbs];
+    if (best && readings.length > 1 && best.source === 'table geometry') {
+      onProgress({ fileName: file.name, stage: 'Recovered a table layout from word positions', progress: 0.97 });
+    }
 
     const micro: MicrobiologyReport[] = [];
     if (classification.modules.includes('microbiology')) {

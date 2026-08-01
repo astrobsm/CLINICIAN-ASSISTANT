@@ -64,6 +64,23 @@ interface ExtractedNumber {
   index: number;
 }
 
+/** Parse "4.5 - 17.0", "< 5" or "> 90" into bounds. */
+function parseRefText(refText: string): { low?: number; high?: number } | undefined {
+  if (!refText) return undefined;
+  const pair = /(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/.exec(refText);
+  if (pair) {
+    const low = parseFloat(pair[1]);
+    const high = parseFloat(pair[2]);
+    if (Number.isFinite(low) && Number.isFinite(high) && high > low) return { low, high };
+    return undefined;
+  }
+  const upper = /^[\s(]*[<≤]\s*(-?\d+(?:\.\d+)?)/.exec(refText);
+  if (upper) return { high: parseFloat(upper[1]) };
+  const lower = /^[\s(]*[>≥]\s*(-?\d+(?:\.\d+)?)/.exec(refText);
+  if (lower) return { low: parseFloat(lower[1]) };
+  return undefined;
+}
+
 /** Pull the reported value (not the reference range) out of the tail of a line. */
 function extractValues(rest: string): ExtractedNumber[] {
   const { body } = splitRefRange(rest);
@@ -103,20 +120,59 @@ interface LabelHit {
   endIndex: number;
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Strip table furniture from the start of a row.
+ *
+ * Printed laboratory tables carry a leading "Investigation" column — "FBC",
+ * "U&E", "LFT" — and cell borders that recognition reads as pipes or dashes.
+ * Anything before the parameter name has to come off, or a three-letter
+ * analyte can never be at the start of the line where it is looked for.
+ */
+const ROW_PREFIX = /^[\s|*•·.\-–—]*(?:(?:fbc|cbc|u&e|ue|lft|lfts|rft|abg|mcs|bio|chem|haem|heam|test|investigation)\b[\s|:.\-–—]*)?/i;
+
 function matchLabel(line: string): LabelHit | null {
-  const lower = line.toLowerCase();
+  const prefix = ROW_PREFIX.exec(line)?.[0] ?? '';
+  const body = line.slice(prefix.length);
+  const lower = body.toLowerCase();
+
+  // Token starts, so a short synonym can be required to be a whole word near
+  // the beginning of the parameter name rather than at character zero.
+  const tokenStarts: number[] = [];
+  let inToken = false;
+  for (let i = 0; i < body.length; i++) {
+    const isSep = /[\s|:]/.test(body[i]);
+    if (!isSep && !inToken) { tokenStarts.push(i); inToken = true; }
+    else if (isSep) inToken = false;
+  }
+  const thirdTokenEnd = tokenStarts[3] ?? body.length;
+
   for (const { phrase, def } of SYNONYM_INDEX) {
-    if (phrase.length <= 3) {
-      // Very short synonyms (k, na, cl, ca, pt, tt, ig, ck) must anchor the line
-      // to avoid matching letters embedded in other words.
-      const re = new RegExp(`^[\\s*•.\\-]*${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-      const m = re.exec(line);
-      if (m) return { def, endIndex: m[0].length };
+    if (phrase.length <= 2) {
+      // One and two letter synonyms (k, na, cl, ca, pt, tt, ig, ph) stay
+      // anchored: "mg" and "pt" occur inside units and ordinary words often
+      // enough that a loose match would mislabel whole rows.
+      const m = new RegExp(`^[\\s*•.\\-]*${escapeRe(phrase)}\\b`, 'i').exec(body);
+      if (m) return { def, endIndex: prefix.length + m[0].length };
       continue;
     }
+
+    if (phrase.length === 3) {
+      // Three-letter abbreviations must be a whole word inside the first few
+      // tokens — enough to survive a leading category column, tight enough
+      // that a stray match later in the row cannot claim the value.
+      const re = new RegExp(`\\b${escapeRe(phrase)}\\b`, 'i');
+      const m = re.exec(body);
+      if (m && (m.index ?? 0) < thirdTokenEnd) {
+        return { def, endIndex: prefix.length + (m.index ?? 0) + m[0].length };
+      }
+      continue;
+    }
+
     const idx = lower.indexOf(phrase);
     if (idx >= 0 && idx <= 28) {
-      return { def, endIndex: idx + phrase.length };
+      return { def, endIndex: prefix.length + idx + phrase.length };
     }
   }
   return null;
@@ -192,9 +248,16 @@ export function parseLabValues(
     if (!hit) continue;
 
     let rest = line.slice(hit.endIndex);
-    // Values sometimes sit on the following line in two-column layouts.
+    // Values sometimes sit on the following line in two-column layouts, with
+    // the unit on the line after that. Both are pulled in, because a
+    // differential read without its unit is indistinguishable from an absolute
+    // count and would be graded on the wrong scale entirely.
     if (!/\d/.test(rest) && lines[i + 1] && /^\s*[<>]?\s*[-+]?\d/.test(lines[i + 1])) {
       rest = lines[i + 1];
+      const after = lines[i + 2];
+      if (after && !/\d/.test(after) && looksLikeUnit(after.trim()) && after.trim().length <= 12) {
+        rest = `${rest} ${after.trim()}`;
+      }
     }
     if (!/\d/.test(rest)) continue;
 
@@ -216,6 +279,21 @@ export function parseLabValues(
     if (isDifferential && /%/.test(chosen.unit)) {
       percentages.push({ key: def.key, percent: chosen.value, raw: line });
       continue;
+    }
+
+    // A differential reported without any unit is ambiguous. Treat it as a
+    // percentage when it cannot be an absolute count — a subset of the white
+    // cells cannot outnumber the total, and no differential reaches 100 ×10⁹/L
+    // in practice. Reading 68.6% as 68.6 ×10⁹/L would otherwise be reported as
+    // a leukaemoid reaction requiring urgent haematology review.
+    if (isDifferential && !chosen.unit) {
+      const wbcSoFar = analytes.find((a) => a.key === 'wbc')?.value;
+      const impossibleAsAbsolute =
+        (wbcSoFar !== undefined && chosen.value > wbcSoFar * 1.05) || chosen.value > 100;
+      if (impossibleAsAbsolute && chosen.value <= 100) {
+        percentages.push({ key: def.key, percent: chosen.value, raw: line });
+        continue;
+      }
     }
 
     const conv = toCanonical(def.unitRule, chosen.value, chosen.unit || undefined);
@@ -240,6 +318,17 @@ export function parseLabValues(
     seen.add(def.key);
 
     const ref = refForPatient(def, patient);
+
+    // The interval printed beside the result belongs to the assay that
+    // produced it, so it is preferred over the built-in default for grading.
+    // It is only trusted when it is in the same units as the value — a range
+    // that would call this very result absurd is a misread, not a range.
+    const printed = parseRefText(splitRefRange(line.slice(hit.endIndex)).refText);
+    const printedUsable =
+      printed !== undefined &&
+      (printed.low === undefined || conv.value >= printed.low * 0.05) &&
+      (printed.high === undefined || conv.value <= printed.high * 20);
+
     analytes.push({
       key: def.key,
       label: def.label,
@@ -250,8 +339,11 @@ export function parseLabValues(
       rawUnit: chosen.unit || undefined,
       confidence,
       edited: false,
-      refLow: ref?.low,
-      refHigh: ref?.high,
+      refLow: printedUsable ? printed!.low ?? ref?.low : ref?.low,
+      refHigh: printedUsable ? printed!.high ?? ref?.high : ref?.high,
+      printedRefLow: printedUsable ? printed!.low : undefined,
+      printedRefHigh: printedUsable ? printed!.high : undefined,
+      refSource: printedUsable ? 'report' : 'built-in',
       sourceId,
     });
   }
@@ -267,7 +359,62 @@ export function resolvePercentages(
   confidence: number,
 ): Analyte[] {
   const wbc = result.analytes.find((a) => a.key === 'wbc');
-  if (!wbc) return [];
+  if (!wbc) {
+    // Without a total white cell count the absolute values cannot be derived.
+    // The percentages are still recorded, rather than discarded, so the
+    // clinician can see what was on the report and enter the white count.
+    for (const p of result.percentages) {
+      const def = ANALYTE_BY_KEY[p.key];
+      if (!def || result.observations.some((o) => o.key === `fbc:${p.key}pct`)) continue;
+      result.observations.push({
+        key: `fbc:${p.key}pct`,
+        label: `${def.label.replace(' (absolute)', '')} (percentage)`,
+        value: `${p.percent}%`,
+        rawText: `${p.raw} — absolute count not derivable without a white cell count`,
+        confidence,
+        edited: false,
+        sourceId,
+      });
+    }
+    return [];
+  }
+  // A differential adds up to 100%. A sum well away from that means one of the
+  // percentages was misread, and a lost decimal point is by far the commonest
+  // way for that to happen — "1.1" read as "11". Where dividing exactly one
+  // value by ten restores the total, that value is corrected and marked as
+  // needing verification; where the discrepancy cannot be pinned on a single
+  // value, nothing is changed and the clinician is told the sum is wrong.
+  const total = result.percentages.reduce((a, p) => a + p.percent, 0);
+  if (result.percentages.length >= 4 && Math.abs(total - 100) > 3) {
+    const candidates = result.percentages.filter(
+      (p) => Math.abs(total - p.percent * 0.9 - 100) <= 1.5,
+    );
+    if (candidates.length === 1) {
+      const c = candidates[0];
+      const def = ANALYTE_BY_KEY[c.key];
+      result.observations.push({
+        key: `fbc:${c.key}corrected`,
+        label: `${def?.label.replace(' (absolute)', '') ?? c.key} percentage corrected`,
+        value: `${c.percent}% → ${round(c.percent / 10, 2)}%`,
+        rawText: `The differential summed to ${round(total, 1)}%. Dividing this value by ten restores the total to 100%, which is the signature of a decimal point lost in recognition. Verify against the report.`,
+        confidence: 0.4,
+        edited: false,
+        sourceId,
+      });
+      c.percent = round(c.percent / 10, 3);
+    } else {
+      result.observations.push({
+        key: 'fbc:differentialsum',
+        label: 'Differential does not sum to 100%',
+        value: `${round(total, 1)}%`,
+        rawText: 'The white cell differential percentages read from the report do not total 100%. At least one was misread — check each against the source before relying on the absolute counts.',
+        confidence: 0.4,
+        edited: false,
+        sourceId,
+      });
+    }
+  }
+
   const out: Analyte[] = [];
   for (const p of result.percentages) {
     if (result.analytes.some((a) => a.key === p.key)) continue;
