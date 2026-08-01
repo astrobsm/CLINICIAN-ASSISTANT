@@ -1,0 +1,22 @@
+{
+  "name": "Clinician Assistant",
+  "short_name": "Clinician",
+  "description": "Offline multi-modal clinical diagnostic analysis. All processing on device; no patient information leaves the device.",
+  "id": "nexora-clinician-assistant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "categories": ["medical", "productivity", "utilities"],
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Scan a report", "url": "./?tab=scan", "description": "Go straight to scanning a diagnostic report" }
+  ]
+}

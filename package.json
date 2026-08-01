@@ -1,0 +1,40 @@
+{
+  "name": "clinician-assistant",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Clinician Assistant — offline multi-modal clinical diagnostic analysis. Credit: NEXORA Innovations.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "setup:ocr": "node scripts/setup-ocr-assets.mjs",
+    "postinstall": "node scripts/setup-ocr-assets.mjs",
+    "dev": "vite",
+    "build": "tsc -b --noCheck && vite build",
+    "typecheck": "tsc -b",
+    "verify": "node scripts/verify.mjs",
+    "verify:ecg": "node scripts/verify-ecg.mjs",
+    "verify:pwa": "node scripts/verify-pwa.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "preview": "vite preview --port 4173 --host",
+    "preview:http": "node scripts/preview-http.mjs"
+  },
+  "dependencies": {
+    "jspdf": "^2.5.2",
+    "pdfjs-dist": "^4.8.69",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "puppeteer-core": "^25.4.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
