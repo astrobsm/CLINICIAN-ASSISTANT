@@ -11,3 +11,7 @@ public/ocr/
 
 # Never commit patient data or encrypted session archives
 *.enc
+
+# Scratch files from diagnostic sessions
+.tmp-*
+.tmpprofile*
