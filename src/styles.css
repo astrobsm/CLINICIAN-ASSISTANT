@@ -117,6 +117,27 @@ button, input, select, textarea { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+.offline-pill {
+  appearance: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color .15s, background .15s, color .15s;
+}
+
+.offline-pill:hover { filter: brightness(1.15); }
+
+/* Switched to a warning colour whenever a feature that transmits is active. */
+.offline-pill.transmitting {
+  border-color: rgba(255, 209, 102, 0.55);
+  background: rgba(255, 209, 102, 0.1);
+  color: var(--moderate);
+}
+
+.offline-pill.transmitting .dot {
+  background: var(--moderate);
+  box-shadow: 0 0 8px var(--moderate);
+}
+
 .offline-pill .dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--normal);

@@ -9,6 +9,7 @@ import { ReviewPanel } from './ui/ReviewPanel';
 import { ScanPanel } from './ui/ScanPanel';
 import { SettingsPanel } from './ui/SettingsPanel';
 import { InstallBanner } from './ui/InstallBanner';
+import { StatusPill } from './ui/StatusPill';
 import { SEVERITY_LABEL, severityRank } from './clinical/types';
 import { alertingFindings } from './clinical/analyse';
 
@@ -64,10 +65,7 @@ export default function App() {
           <h1>Clinician Assistant</h1>
           <div className="sub">Multi-modal clinical diagnostic analysis · credit: NEXORA Innovations</div>
         </div>
-        <div className="offline-pill" title="All processing is performed locally. No patient information leaves this device.">
-          <span className="dot" />
-          Offline · on-device analysis
-        </div>
+        <StatusPill onOpen={() => setTab('scan')} />
       </header>
 
       <nav className="tabs" role="tablist">

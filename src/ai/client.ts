@@ -43,6 +43,14 @@ export interface AiExtraction {
 
 let cachedAvailability: boolean | null = null;
 
+const enabledListeners = new Set<() => void>();
+
+/** Notified whenever assisted extraction is switched on or off. */
+export function subscribeEnabled(fn: () => void): () => void {
+  enabledListeners.add(fn);
+  return () => { enabledListeners.delete(fn); };
+}
+
 export function isEnabled(): boolean {
   try { return localStorage.getItem(ENABLED_KEY) === '1'; } catch { return false; }
 }
@@ -52,6 +60,7 @@ export function setEnabled(on: boolean): void {
     if (on) localStorage.setItem(ENABLED_KEY, '1');
     else localStorage.removeItem(ENABLED_KEY);
   } catch { /* private mode */ }
+  enabledListeners.forEach((fn) => fn());
 }
 
 export function hasConsented(): boolean {
