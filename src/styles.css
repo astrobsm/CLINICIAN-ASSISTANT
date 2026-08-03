@@ -736,8 +736,287 @@ td.num, th.num { text-align: right; font-family: var(--mono); white-space: nowra
   .page-break { break-before: page; }
   h1, h2, h3, h4 { break-after: avoid; }
   table, .finding, .correlation, .stat { break-inside: avoid; }
+  /* A correction plan may be longer than a page; keep each step whole rather
+     than forcing the whole plan onto one sheet. */
+  .rx { break-inside: auto; }
+  .rx-step, .rx-limits, .rx-deficit { break-inside: avoid; }
 
   a { color: #000; text-decoration: none; }
 }
 
 .print-only { display: none; }
+
+/* ───────────── Correction and administration guidance ───────────── */
+
+.rx {
+  margin-top: 14px;
+  border: 1px solid rgba(0, 163, 255, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 163, 255, 0.04);
+  padding: 12px 14px;
+}
+
+.rx-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.rx-head h5 { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: .3px; color: var(--accent-bright); }
+
+.rx-chip {
+  background: rgba(0, 163, 255, .18);
+  border-color: rgba(0, 163, 255, .45);
+  color: var(--accent-bright);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: .5px;
+}
+
+.rx-target { font-size: 12.5px; margin-bottom: 10px; color: var(--text); }
+
+.rx-deficit {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  margin-bottom: 10px;
+}
+.rx-deficit .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-weight: 600; }
+.rx-deficit .v { font-family: var(--mono); font-size: 14px; color: var(--accent-bright); margin: 2px 0 4px; }
+.rx-deficit .n { font-size: 11.5px; color: var(--text-dim); }
+
+.rx h6 {
+  margin: 0 0 5px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.rx ul { margin: 0 0 10px; padding-left: 18px; font-size: 12.5px; }
+.rx li { margin-bottom: 3px; }
+
+/* The limits are the part that must never be missed. */
+.rx-limits {
+  border-left: 3px solid var(--critical);
+  background: rgba(255, 91, 91, .07);
+  padding: 8px 10px 2px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-bottom: 10px;
+}
+.rx-limits h6 { color: var(--critical); }
+
+.rx-pre {
+  border-left: 3px solid var(--moderate);
+  background: rgba(255, 209, 102, .06);
+  padding: 8px 10px 2px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-bottom: 10px;
+}
+.rx-pre h6 { color: var(--moderate); }
+
+.rx-step {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 10px 12px;
+  margin-bottom: 9px;
+}
+
+.rx-step-head { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 8px; }
+
+.route {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-dim);
+}
+.route-intravenous { border-color: rgba(255,159,67,.5); background: rgba(255,159,67,.12); color: var(--significant); }
+.route-oral { border-color: rgba(61,220,151,.45); background: rgba(61,220,151,.1); color: var(--normal); }
+.route-nebulised, .route-either { border-color: rgba(0,163,255,.45); background: rgba(0,163,255,.1); color: var(--accent-bright); }
+
+.rx-step-head .when { font-size: 12px; color: var(--text-dim); }
+
+.rx-step dl { display: grid; grid-template-columns: 118px 1fr; gap: 3px 12px; margin: 0; font-size: 12.5px; }
+.rx-step dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-weight: 600; padding-top: 2px; }
+.rx-step dd { margin: 0; }
+.rx-step dd.dose { font-family: var(--mono); color: var(--accent-bright); font-size: 13px; }
+
+.rx-caution { margin: 9px 0 0 !important; padding-left: 18px; font-size: 11.5px; color: var(--moderate); }
+
+.rx-monitor { margin-top: 2px; }
+
+.rx-foot { margin: 6px 0 0; font-size: 11px; color: var(--text-faint); font-style: italic; }
+
+@media (max-width: 620px) {
+  .rx-step dl { grid-template-columns: 1fr; gap: 0 0; }
+  .rx-step dt { margin-top: 7px; }
+}
+
+/* ───────────────────── Multi-shot camera capture ───────────────────── */
+
+.cam-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(2, 4, 8, .88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(3px);
+}
+
+.cam {
+  width: 100%;
+  max-width: 900px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.cam-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.cam-stage {
+  position: relative;
+  background: #000;
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cam-video { width: 100%; max-height: 58vh; display: block; object-fit: contain; }
+
+/* Corner marks, to encourage filling the frame with the page. */
+.cam-guide { position: absolute; inset: 7%; pointer-events: none; }
+.cam-guide span {
+  position: absolute;
+  width: 26px; height: 26px;
+  border: 2px solid rgba(0, 163, 255, .65);
+}
+.cam-guide span:nth-child(1) { top: 0; left: 0; border-right: none; border-bottom: none; }
+.cam-guide span:nth-child(2) { top: 0; right: 0; border-left: none; border-bottom: none; }
+.cam-guide span:nth-child(3) { bottom: 0; left: 0; border-right: none; border-top: none; }
+.cam-guide span:nth-child(4) { bottom: 0; right: 0; border-left: none; border-top: none; }
+
+.cam-flash { position: absolute; inset: 0; background: #fff; opacity: .8; }
+
+.cam-wait, .cam-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 24px;
+}
+.cam-error p { margin: 0; max-width: 460px; }
+
+.cam-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.shutter {
+  appearance: none;
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  transition: transform .08s, box-shadow .15s;
+  box-shadow: var(--glow);
+}
+.shutter span { width: 42px; height: 42px; border-radius: 50%; background: var(--accent); display: block; }
+.shutter:hover:not(:disabled) span { background: var(--accent-bright); }
+.shutter:active:not(:disabled) { transform: scale(.93); }
+.shutter:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+.cam-strip {
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  padding: 11px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.cam-thumb {
+  position: relative;
+  margin: 0;
+  flex: none;
+  width: 88px;
+}
+.cam-thumb img {
+  width: 88px; height: 66px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: block;
+}
+.cam-thumb.blurred img { border-color: var(--moderate); }
+.cam-thumb figcaption { font-size: 11px; color: var(--text-faint); text-align: center; margin-top: 2px; }
+.cam-thumb .warn { color: var(--moderate); }
+
+.cam-del {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--critical);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.cam-del:hover { background: var(--critical); color: #fff; }
+
+.cam-note {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--moderate);
+  background: rgba(255, 209, 102, .07);
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 560px) {
+  .cam-backdrop { padding: 0; }
+  .cam { max-width: none; height: 100%; border-radius: 0; border: none; }
+  .cam-video { max-height: none; }
+}
+
+/* A capture in flight: the shutter stays live so no press is lost. */
+.shutter.busy span { background: var(--accent-deep); transform: scale(.82); transition: transform .1s; }

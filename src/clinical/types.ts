@@ -2,6 +2,9 @@
  * Core domain types for the Clinical Diagnostic Interpretation Engine.
  * Everything here is pure data — no I/O, no network. All analysis is local.
  */
+import type { CorrectionPlan } from './replacement';
+
+export type { CorrectionPlan } from './replacement';
 
 /** Priority Alert System — six tiers, ordered least to most urgent. */
 export type Severity =
@@ -253,6 +256,11 @@ export interface Finding {
   guidance: string[];
   /** Machine tags consumed by the correlation engine. */
   tags: string[];
+  /**
+   * How to correct the abnormality, where a defensible protocol exists —
+   * preparation, dose, route, rate and the limits that must not be exceeded.
+   */
+  correction?: CorrectionPlan;
 }
 
 export const finding = (f: Partial<Finding> & Pick<Finding, 'id' | 'module' | 'title' | 'severity' | 'interpretation'>): Finding => ({

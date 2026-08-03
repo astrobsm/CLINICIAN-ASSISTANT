@@ -2,7 +2,7 @@
   "name": "clinician-assistant",
   "private": true,
   "version": "1.0.0",
-  "description": "Clinician Assistant \u2014 offline multi-modal clinical diagnostic analysis. Credit: NEXORA Innovations.",
+  "description": "Clinician Assistant — offline multi-modal clinical diagnostic analysis. Credit: NEXORA Innovations.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -22,8 +22,11 @@
     "preview:http": "node scripts/preview-http.mjs",
     "verify:lab": "node scripts/verify-lab-scan.mjs",
     "verify:redaction": "node scripts/verify-redaction.mjs",
-    "verify:all": "npm run verify && npm run verify:ecg",
-    "verify:assisted": "node scripts/verify-assisted.mjs"
+    "verify:all": "npm run verify && npm run verify:ecg && npm run verify:correction",
+    "verify:assisted": "node scripts/verify-assisted.mjs",
+    "verify:correction": "node scripts/verify-correction.mjs",
+    "verify:camera": "node scripts/verify-camera.mjs",
+    "calibrate:blur": "node scripts/calibrate-blur.mjs"
   },
   "dependencies": {
     "jspdf": "^2.5.2",

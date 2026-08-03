@@ -6,6 +6,7 @@ import { ocrAssetsAvailable } from '../ocr/ocrEngine';
 import type { SessionApi } from '../store/session';
 import { SAMPLE_REPORTS, sampleEcgImageFile, sampleFiles } from '../demo/sampleReports';
 import { AssistPanel } from './AssistPanel';
+import { CameraCapture } from './CameraCapture';
 
 const ACCEPT = 'image/*,application/pdf,text/plain,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt';
 
@@ -27,13 +28,28 @@ export function ScanPanel({
   const [over, setOver] = useState(false);
   const [assets, setAssets] = useState<boolean | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void ocrAssetsAvailable().then(setAssets); }, []);
 
+  // A live stream needs both the API and a secure context; without either the
+  // platform file input is the only route and the button opens that instead.
+  const liveCamera =
+    typeof navigator !== 'undefined' &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    (window.isSecureContext || location.hostname === 'localhost');
+
   return (
     <div className="grid" style={{ gap: 16 }}>
+      {camera && (
+        <CameraCapture
+          onClose={() => setCamera(false)}
+          onCapture={(files) => { setCamera(false); void addFiles(files); }}
+        />
+      )}
+
       {assets === false && (
         <div className="disclaimer">
           <strong>OCR language data not found.</strong> The recognition engine needs <code>eng.traineddata</code> in
@@ -46,7 +62,14 @@ export function ScanPanel({
         title="Scan diagnostic reports"
         actions={
           <>
-            <button className="btn" onClick={() => cameraRef.current?.click()} disabled={busy}>Use camera</button>
+            <button
+              className="btn"
+              onClick={() => (liveCamera ? setCamera(true) : cameraRef.current?.click())}
+              disabled={busy}
+              title={liveCamera ? 'Take several photographs in one session and analyse them together' : 'Take a photograph'}
+            >
+              Use camera
+            </button>
             <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={busy}>Choose files</button>
           </>
         }

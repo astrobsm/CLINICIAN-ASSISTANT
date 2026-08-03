@@ -10,12 +10,14 @@ import type { InstitutionConfig } from '../config/institution';
 import { alertingFindings } from '../clinical/analyse';
 import { describeRange, ANALYTE_BY_KEY } from '../clinical/referenceRanges';
 import { susceptibilityTable } from '../clinical/modules/microbiology';
+import { ROUTE_LABEL } from '../clinical/replacement';
 import { fmt } from '../clinical/units';
 import {
   MODULE_LABEL,
   SEVERITY_LABEL,
   severityRank,
   type AnalysisResult,
+  type CorrectionPlan,
   type Finding,
   type MicrobiologyReport,
   type ModuleId,
@@ -57,6 +59,45 @@ function findingHtml(f: Finding): string {
     ${block('Potential clinical implications', f.implications)}
     ${block('Monitoring recommendations', f.monitoring)}
     ${block('Practice guidance', f.guidance)}
+    ${f.correction ? correctionHtml(f.correction) : ''}
+  </div>`;
+}
+
+/**
+ * Correction and administration guidance, rendered for print.
+ *
+ * The report is carried to the bedside and written on, so this is laid out as
+ * a table a clinician can read at arm's length, with the limits above the
+ * doses rather than in a footnote.
+ */
+function correctionHtml(plan: CorrectionPlan): string {
+  const rows = plan.steps
+    .map(
+      (s) => `
+      <div class="rxstep">
+        <div class="rxwhen"><span class="rxroute">${esc(ROUTE_LABEL[s.route])}</span> ${esc(s.indication)}</div>
+        <table class="rxtab">
+          <tr><th>Preparation</th><td>${esc(s.preparation)}</td></tr>
+          <tr><th>Dose</th><td class="dose">${esc(s.dose)}</td></tr>
+          <tr><th>Administration</th><td>${esc(s.administration)}</td></tr>
+          ${s.access ? `<tr><th>Access</th><td>${esc(s.access)}</td></tr>` : ''}
+          ${s.cautions?.length ? `<tr><th>Cautions</th><td>${list(s.cautions)}</td></tr>` : ''}
+        </table>
+      </div>`,
+    )
+    .join('');
+
+  return `
+  <div class="rxplan">
+    <div class="rxhead"><strong>${esc(plan.title)}</strong> — ${esc(plan.measured)}</div>
+    <p class="rxtarget"><strong>Target.</strong> ${esc(plan.target)}</p>
+    ${plan.deficit ? `<p class="rxdef"><strong>${esc(plan.deficit.label)}:</strong> ${esc(plan.deficit.value)}<br><span class="note">${esc(plan.deficit.note)}</span></p>` : ''}
+    ${plan.hardLimits.length ? `<div class="rxlimit"><h5>Do not exceed</h5>${list(plan.hardLimits)}</div>` : ''}
+    ${plan.prerequisites?.length ? `<div class="blk"><h5>Before, or alongside</h5>${list(plan.prerequisites)}</div>` : ''}
+    ${rows}
+    <div class="blk"><h5>Monitoring during correction</h5>${list(plan.monitoring)}</div>
+    <p class="note">Decision support only. Doses are computed from the values and weight recorded in this report and
+    must be checked against local protocol, renal function and allergy status before prescribing.</p>
   </div>`;
 }
 
@@ -408,6 +449,21 @@ export const REPORT_CSS = `
   .blk h5 { margin:0 0 3px; font-size:9.5px; text-transform:uppercase; letter-spacing:.5px; color:#0b63a8; }
   .blk ul, .corr ul, .mod > ul { margin:0; padding-left:17px; }
   .blk li, .corr li { margin-bottom:2px; }
+  .rxplan { border:1px solid #b9d6ea; background:#f5fbff; border-radius:4px; padding:9px 11px; margin:9px 0 4px; }
+  .rxhead { font-size:11.5px; color:#0b63a8; margin-bottom:5px; }
+  .rxtarget { margin:0 0 6px !important; }
+  .rxdef { margin:0 0 7px !important; padding:6px 9px; background:#fff; border:1px solid #dde5ec; border-radius:3px; }
+  .rxlimit { border-left:3px solid #b91c1c; background:#fdf2f2; padding:6px 9px 2px; margin-bottom:8px; }
+  .rxlimit h5 { margin:0 0 3px; font-size:9.5px; text-transform:uppercase; letter-spacing:.5px; color:#b91c1c; }
+  .rxlimit ul { margin:0; padding-left:17px; }
+  .rxstep { border:1px solid #dde5ec; background:#fff; border-radius:3px; padding:7px 9px; margin-bottom:7px; break-inside:avoid; }
+  .rxwhen { font-size:10.5px; color:#4a5a6a; margin-bottom:5px; }
+  .rxroute { display:inline-block; border:1px solid #0b63a8; color:#0b63a8; border-radius:9px; padding:0 6px; font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin-right:5px; }
+  .rxtab { width:100%; border-collapse:collapse; }
+  .rxtab th { text-align:left; width:92px; vertical-align:top; font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:#6b7a89; font-weight:600; padding:2px 8px 2px 0; }
+  .rxtab td { vertical-align:top; padding:2px 0; }
+  .rxtab td.dose { font-weight:700; }
+  .rxtab ul { margin:0; padding-left:15px; }
   .alerts { border:2px solid #b91c1c; border-radius:5px; padding:12px 14px; background:#fff5f5; }
   .alerts h3 { border-bottom-color:#e7b7b7; color:#7f1d1d; }
   .alert { border-left:4px solid #b91c1c; padding:7px 11px; margin:7px 0; background:#fff; border-radius:3px; }
@@ -428,6 +484,8 @@ export const REPORT_CSS = `
   .page-break { break-before:page; }
   h3, h4 { break-after:avoid; }
   .finding, .corr, .alert, table { break-inside:avoid; }
+  .rxplan { break-inside:auto; }
+  .rxstep, .rxlimit { break-inside:avoid; }
 `;
 
 /** Self-contained HTML file for the HTML export. */

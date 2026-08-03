@@ -12,6 +12,8 @@ import { fmt } from '../units';
 import type { Finding, ModuleResult, Severity } from '../types';
 import { finding } from '../types';
 import { rollUp } from '../severity';
+import { correctionPlan } from '../replacement';
+import { ckdEpi2021 } from './renal';
 
 /** Total body water estimate (litres) used for sodium and free-water deficits. */
 export function totalBodyWater(weightKg: number, sex: string, age: number | null): number {
@@ -40,6 +42,14 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
   const creat = ctx.v('creatinine');
 
   const tbw = p.weightKg ? totalBodyWater(p.weightKg, p.sex, p.age) : null;
+
+  /**
+   * Renal function governs the dose of almost every replacement below, so it
+   * is resolved once here — the reported value where the laboratory gave one,
+   * otherwise calculated. Without it the plans fall back to a generic caution
+   * rather than a specific instruction.
+   */
+  const egfr = ctx.v('egfr') ?? (creat !== null && p.age !== null ? ckdEpi2021(creat, p.age, p.sex) : null);
 
   // ── DERIVED QUANTITIES ───────────────────────────────────────────────
   let correctedCa: number | null = null;
@@ -83,6 +93,20 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
       note: 'Hyperglycaemia draws water into the vascular space and lowers measured sodium; the corrected value reflects true tonicity.',
     };
   }
+
+  /**
+   * Correction and administration guidance for a graded finding.
+   *
+   * Calcium is passed through albumin-corrected because that is the value the
+   * decision is actually made on, and eGFR is resolved above because the dose
+   * of magnesium, phosphate and zoledronic acid all depend on it.
+   */
+  const rx = (id: string, severity: Severity) =>
+    correctionPlan(id, {
+      patient: p,
+      severity,
+      value: (key) => (key === 'egfr' ? egfr : key === 'calcium' ? correctedCa ?? ca : ctx.v(key)),
+    }) ?? undefined;
 
   // ── SODIUM ───────────────────────────────────────────────────────────
   if (na !== null && ctx.low('na')) {
@@ -129,6 +153,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Treat the cause: fluid restriction for SIAD, volume replacement for hypovolaemia, and diuresis with sodium restriction for hypervolaemic states.',
       ],
       tags: ['hyponatraemia', na < 125 ? 'severe-hyponatraemia' : ''],
+      correction: rx('lyte.hyponatraemia', sev),
     }));
   }
 
@@ -156,6 +181,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Replace the water deficit enterally where possible; otherwise use 5% glucose or 0.45% sodium chloride, adding maintenance requirements and ongoing losses.',
       ],
       tags: ['hypernatraemia'],
+      correction: rx('lyte.hypernatraemia', sev),
     }));
   }
 
@@ -207,6 +233,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Calcium protects the myocardium but does not lower potassium — it must always be combined with a shifting and a removal strategy.',
       ],
       tags: ['hyperkalaemia', k >= 6.0 ? 'hyperkalaemia:severe' : '', 'ecg-indicated', 'arrhythmia-risk'],
+      correction: rx('lyte.hyperkalaemia', sev),
     }));
   }
 
@@ -246,6 +273,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Never give undiluted concentrated potassium chloride.',
       ],
       tags: ['hypokalaemia', k < 3.0 ? 'hypokalaemia:severe' : '', 'ecg-indicated', 'arrhythmia-risk'],
+      correction: rx('lyte.hypokalaemia', sev),
     }));
   }
 
@@ -272,6 +300,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Correct magnesium concurrently; identify and treat the underlying cause.',
       ],
       tags: ['hypocalcaemia', 'ecg-indicated', 'qt-prolongation-risk'],
+      correction: rx('lyte.hypocalcaemia', sev),
     }));
   }
 
@@ -296,6 +325,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Investigate and treat the underlying cause — PTH is the pivotal test.',
       ],
       tags: ['hypercalcaemia', 'ecg-indicated'],
+      correction: rx('lyte.hypercalcaemia', sev),
     }));
   }
 
@@ -322,6 +352,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
         'Reduce the dose and monitor closely in renal impairment, where magnesium accumulates.',
       ],
       tags: ['hypomagnesaemia', 'arrhythmia-risk', 'qt-prolongation-risk'],
+      correction: rx('lyte.hypomagnesaemia', sev),
     }));
   }
 
@@ -344,11 +375,12 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
 
   // ── PHOSPHATE ────────────────────────────────────────────────────────
   if (po4 !== null && po4 < 0.80) {
+    const sev: Severity = po4 < 0.32 ? 'critical' : po4 < 0.5 ? 'significant' : 'moderate';
     findings.push(finding({
       id: 'lyte.hypophosphataemia',
       module: 'electrolytes',
       title: po4 < 0.32 ? 'Severe hypophosphataemia' : 'Hypophosphataemia',
-      severity: po4 < 0.32 ? 'critical' : po4 < 0.5 ? 'significant' : 'moderate',
+      severity: sev,
       interpretation: `Phosphate ${fmt(po4, 2)} mmol/L. Severe hypophosphataemia impairs ATP generation and causes muscle weakness, respiratory failure, haemolysis, rhabdomyolysis and cardiac dysfunction.`,
       basis: ['phosphate'],
       differentials: ['Refeeding syndrome', 'Alcohol excess', 'Diabetic ketoacidosis during treatment', 'Respiratory alkalosis', 'Hyperparathyroidism', 'Renal tubular disorders', 'Phosphate binders or poor intake'],
@@ -357,6 +389,7 @@ export function analyseElectrolytes(ctx: ClinicalContext): ModuleResult {
       monitoring: ['Phosphate, magnesium and potassium daily during refeeding, or 12-hourly during intravenous replacement'],
       guidance: ['Where refeeding syndrome is suspected, give thiamine and vitamin B before feeding, start at a low caloric rate and increase gradually with daily electrolyte monitoring.'],
       tags: ['hypophosphataemia', 'refeeding-risk'],
+      correction: rx('lyte.hypophosphataemia', sev),
     }));
   }
 

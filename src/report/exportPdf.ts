@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import { alertingFindings } from '../clinical/analyse';
 import { describeRange, ANALYTE_BY_KEY } from '../clinical/referenceRanges';
 import { susceptibilityTable } from '../clinical/modules/microbiology';
+import { ROUTE_LABEL } from '../clinical/replacement';
 import { fmt } from '../clinical/units';
 import { CREDIT_LINE } from '../brand/NexoraLogo';
 import type { InstitutionConfig } from '../config/institution';
@@ -16,6 +17,7 @@ import {
   SEVERITY_LABEL,
   severityRank,
   type AnalysisResult,
+  type CorrectionPlan,
   type Finding,
   type MicrobiologyReport,
   type ModuleId,
@@ -329,7 +331,62 @@ function findingPdf(d: Doc, f: Finding) {
     sub('Potential clinical implications', f.implications);
     sub('Monitoring recommendations', f.monitoring);
     sub('Practice guidance', f.guidance);
+    if (f.correction) correctionPdf(d, f.correction);
   });
+}
+
+/**
+ * Correction and administration guidance in the PDF.
+ *
+ * The hard limits are printed in the alert colour and before any dose, for
+ * the same reason they appear first on screen: this page gets carried to the
+ * bedside, and a maximum infusion rate discovered after the dose has been
+ * drawn up is of no use.
+ */
+function correctionPdf(d: Doc, plan: CorrectionPlan) {
+  d.gap(1.5);
+  d.h3(plan.title, BLUE);
+  d.text(plan.measured, { size: 7.6, bold: true });
+  d.text(`Target. ${plan.target}`, { size: 7.8 });
+
+  if (plan.deficit) {
+    d.gap(0.8);
+    d.kv([[plan.deficit.label, plan.deficit.value]], 52);
+    d.text(plan.deficit.note, { size: 7, italic: true, color: GREY, indent: 3.5 });
+  }
+
+  if (plan.hardLimits.length) {
+    d.h3('Do not exceed', INK['critical']);
+    d.bullets(plan.hardLimits);
+  }
+
+  if (plan.prerequisites?.length) {
+    d.h3('Before, or alongside');
+    d.bullets(plan.prerequisites);
+  }
+
+  for (const s of plan.steps) {
+    d.need(20);
+    d.gap(1.2);
+    d.text(`${ROUTE_LABEL[s.route].toUpperCase()} — ${s.indication}`, { size: 7.2, bold: true, color: GREY });
+    d.kv(
+      [
+        ['Preparation', s.preparation],
+        ['Dose', s.dose],
+        ['Administration', s.administration],
+        ...(s.access ? ([['Access', s.access]] as [string, string][]) : []),
+      ],
+      30,
+    );
+    if (s.cautions?.length) d.bullets(s.cautions, 5);
+  }
+
+  d.h3('Monitoring during correction');
+  d.bullets(plan.monitoring);
+  d.text(
+    'Decision support only. Doses are computed from the values and weight recorded in this report and must be checked against local protocol, renal function and allergy status before prescribing.',
+    { size: 6.8, italic: true, color: GREY },
+  );
 }
 
 function modulePdf(d: Doc, m: ModuleResult, heading: string) {
